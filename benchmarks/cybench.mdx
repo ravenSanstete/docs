@@ -139,7 +139,8 @@ Always run CyBench tasks in an isolated environment. Challenge services may expo
 The evaluation agent registers a minimal set of tools suited for CTF work:
 
 ```python
-from qitos.kit.tool import CodingToolSet, SubmitAnswer
+from qitos.kit import CodingToolSet
+from qitos.kit.tool.cybench import SubmitAnswer
 
 registry.include(
     CodingToolSet(
@@ -157,7 +158,7 @@ registry.register(SubmitAnswer())
 
 The agent calls `submit_answer(answer=...)` to record a candidate flag. In guided mode, one `SubmitAnswer` call is expected per subtask. In unguided mode, a single call ends the task.
 
-You can extend the toolset with additional tools from `qitos.kit.tool` (e.g. `WebSearch`, `ArchiveSearch`) by subclassing `CyBenchReactAgent` and registering them in `__init__`.
+You can extend the toolset with additional browser tools from `qitos.kit.tool.browser` (e.g. `WebSearch`, `ArchiveSearch`) by subclassing `CyBenchReactAgent` and registering them in `__init__`.
 
 ## Task environment lifecycle
 

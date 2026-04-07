@@ -548,7 +548,7 @@ Use this toolset when you want a defensive code-review or audit agent rather tha
 Jupyter notebook manipulation tools.
 
 ```python
-from qitos.kit.tool import NotebookToolSet
+from qitos.kit.tool.notebook import NotebookToolSet
 ```
 
 **Constructor**
@@ -613,7 +613,7 @@ HTTP request tools with automatic retries and structured response payloads.
 
 ```python
 from qitos.kit import HTTPGet, HTTPPost
-from qitos.kit.tool import HTTPRequest
+from qitos.kit.tool.web import HTTPRequest
 ```
 
 **`HTTPGet` constructor**
@@ -665,7 +665,7 @@ from qitos.kit import HTMLExtractText
 Utility tool used by benchmark-style agents to submit a final candidate answer or flag.
 
 ```python
-from qitos.kit.tool import SubmitAnswer
+from qitos.kit.tool.cybench import SubmitAnswer
 ```
 
 This is especially useful in CyBench-like settings where the agent must explicitly hand over a candidate result through a tool call rather than only return a final natural-language answer.

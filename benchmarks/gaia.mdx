@@ -136,9 +136,9 @@ Pass `--gaia-use-annotated` to load the `smolagents/GAIA-annotated` variant, whi
 The evaluation script builds an `OpenDeepResearchGaiaAgent` with the following toolset:
 
 ```python
-from qitos.kit.tool import (
+from qitos.kit import CodingToolSet
+from qitos.kit.tool.browser import (
     ArchiveSearch,
-    CodingToolSet,
     FindInPage,
     FindNext,
     PageDown,
