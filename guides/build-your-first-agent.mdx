@@ -282,3 +282,20 @@ if __name__ == "__main__":
 | Wrong prompt-parser pairing | Parse errors every step | Match your system prompt format to the parser — e.g., `REACT_SYSTEM_PROMPT` → `ReActTextParser` |
 | `max_steps` not passed to `init_state` | Agent always uses the default budget | Forward `kwargs.get("max_steps", DEFAULT)` in `init_state` |
 | Tool not registered before `super().__init__()` | `KeyError` on tool lookup | Build your `ToolRegistry` first, then call `super().__init__(tool_registry=registry)` |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Tutorial track" icon="graduation-cap" href="/tutorials">
+    Continue with the four-lesson research path: ReAct, PlanAct, Claude Code-style, and code security audit.
+  </Card>
+  <Card title="Agent patterns" icon="diagram-project" href="/guides/agent-patterns">
+    Compare the high-level tradeoffs between QitOS pattern families before choosing one.
+  </Card>
+  <Card title="Observability" icon="chart-line" href="/guides/observability">
+    Inspect every run with qita board, replay, and export.
+  </Card>
+  <Card title="Kit reference" icon="toolbox" href="/reference/kit">
+    Look up the parsers, planners, toolsets, and helpers used in the lessons.
+  </Card>
+</CardGroup>

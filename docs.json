@@ -47,6 +47,16 @@
             ]
           },
           {
+            "group": "Tutorials",
+            "pages": [
+              "tutorials/index",
+              "tutorials/react",
+              "tutorials/planact",
+              "tutorials/claude-code",
+              "tutorials/code-security-audit"
+            ]
+          },
+          {
             "group": "Benchmarks",
             "pages": [
               "benchmarks/overview",

@@ -139,12 +139,19 @@ Always run CyBench tasks in an isolated environment. Challenge services may expo
 The evaluation agent registers a minimal set of tools suited for CTF work:
 
 ```python
-from qitos.kit.tool import ListFiles, ReadFile, WriteFile, RunCommand, SubmitAnswer
+from qitos.kit.tool import CodingToolSet, SubmitAnswer
 
-registry.register(ListFiles(root_dir=workspace_root))
-registry.register(ReadFile(root_dir=workspace_root))
-registry.register(WriteFile(root_dir=workspace_root))
-registry.register(RunCommand(cwd=workspace_root, timeout=90))
+registry.include(
+    CodingToolSet(
+        workspace_root=workspace_root,
+        shell_timeout=90,
+        include_notebook=False,
+        enable_lsp=False,
+        enable_tasks=False,
+        enable_web=False,
+        expose_modern_names=False,
+    )
+)
 registry.register(SubmitAnswer())
 ```
 

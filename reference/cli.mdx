@@ -8,6 +8,8 @@ QitOS ships two CLI tools:
 - **`qita`** — trace inspection, web board, replay, and HTML export
 - **`qit`** — developer tools for managing third-party skills
 
+If you care about reproducibility, debugging, or reviewing long-running behavior, `qita` is the more important CLI. It is the human-facing layer for the trace artifacts produced by QitOS runs.
+
 ---
 
 ## qita
@@ -17,6 +19,15 @@ The `qita` CLI starts a local web server that reads the structured trace artifac
 ```
 qita <command> [options]
 ```
+
+### When to use qita
+
+Use `qita` when you want to:
+
+- compare runs after prompt, tool, or model changes
+- inspect a long-running trajectory step by step
+- replay a run for debugging or demos
+- export a single run as a standalone review artifact
 
 <AccordionGroup>
 
@@ -194,3 +205,13 @@ runs/
 <Note>
 The `qita board` and `qita replay` commands require all three files to be present. A directory missing `manifest.json` is not displayed in the board.
 </Note>
+
+## Suggested workflow
+
+For most research and debugging loops:
+
+1. Run your agent with tracing enabled.
+2. Open `qita board --logdir runs`.
+3. Compare stop reasons, step counts, and summaries across runs.
+4. Open the most interesting run in detail or replay view.
+5. Export the run when you need to share or archive it.

@@ -10,6 +10,18 @@ QitOS separates two distinct concerns:
 
 Both are optional. If you pass neither, the Engine uses an internal 24-message window history and no memory adapter.
 
+## The mental model
+
+When researchers say "context", they often mean several different things at once. QitOS keeps them separate on purpose.
+
+| Concern | QitOS primitive | Typical use |
+|---|---|---|
+| What the model sees next step | `History` + `HistoryPolicy` | Prompt continuity |
+| What the agent wants to remember across steps | `Memory` | Recall of findings, artifacts, and prior observations |
+| What happens when context grows too large | `TokenBudgetSummaryHistory` / `CompactHistory` | Long-running control |
+
+This separation is one of QitOS's most practical design choices for long-running agents. You can adjust message-window behavior without redesigning memory, and you can change memory strategy without changing the prompt protocol.
+
 ## History
 
 `History` stores `HistoryMessage` objects (`role`, `content`, `step_id`). The Engine appends a user message before each LLM call and an assistant message after. At call time, it uses `HistoryPolicy` to slice the window it passes to the model.
@@ -45,6 +57,76 @@ result = agent.run(
 <Tip>
 Tighten `max_messages` when your model has a small context window, or set `step_window=4` to keep only the four most recent steps visible to the model.
 </Tip>
+
+## Built-in history strategies
+
+### WindowHistory
+
+`WindowHistory` is the simplest option. It keeps a fixed recency window and evicts older messages.
+
+Choose it when:
+
+- your runs are short
+- you want easy-to-predict context behavior
+- you do not want automatic summarization
+
+### TokenBudgetSummaryHistory
+
+`TokenBudgetSummaryHistory` watches a token budget and summarizes older messages when the current window would exceed that budget.
+
+Choose it when:
+
+- the agent regularly runs long enough to hit context pressure
+- you want a simple summary fallback
+- you want token-budget behavior without the full multi-stage compaction system
+
+### CompactHistory
+
+`CompactHistory` is the most advanced built-in context compactor.
+
+It combines:
+
+- warning thresholds before overflow
+- grouping into compactable rounds
+- micro-compaction for large old messages
+- summary compaction for older interaction history
+- runtime compaction metadata that can surface in traces
+
+Choose it when:
+
+- you are building long-running agents
+- you care about inspectable context management
+- you want context compaction to be part of the research artifact rather than hidden middleware
+
+## Context compaction in practice
+
+`CompactHistory` is worth understanding because it captures one of QitOS's most important design ideas: long-running behavior should be explicit and debuggable.
+
+Its main pieces are:
+
+- `CompactConfig` — thresholds and compaction policy
+- `MessageGrouper` — how messages are grouped into rounds
+- micro-compaction — trims very large old messages while keeping a preview
+- summary compaction — replaces older rounds with a compact continuation summary
+
+Typical setup:
+
+```python
+from qitos.kit.history import CompactConfig, CompactHistory
+
+history = CompactHistory(
+    config=CompactConfig(
+        max_tokens=16000,
+        keep_last_rounds=2,
+        keep_last_messages=8,
+        warning_ratio=0.8,
+        auto_compact=True,
+    ),
+    llm=llm,
+)
+```
+
+This is usually the right choice when you are intentionally studying long-running tool use and want the context behavior to remain visible in traces.
 
 ## Memory
 
@@ -242,3 +324,25 @@ memory = markdown_file_memory(path="./runs/memory.md", max_in_memory=100)
 | `MarkdownFileMemory` | Yes (bounded) | Yes | Recency + role filter |
 
 Start with `WindowMemory` for most agents. Switch to `MarkdownFileMemory` if you need persistence across restarts, or `VectorMemory` when you want the agent to recall semantically relevant past observations rather than just recent ones.
+
+## Recommended combinations
+
+| Goal | History | Memory |
+|---|---|---|
+| Small pattern demos | `WindowHistory` | none or `WindowMemory` |
+| Medium coding agents | `HistoryPolicy` + default window or `TokenBudgetSummaryHistory` | `WindowMemory` or `SummaryMemory` |
+| Long-running coding agents | `CompactHistory` | `MarkdownFileMemory` or `SummaryMemory` |
+| Search/research agents | `TokenBudgetSummaryHistory` or `CompactHistory` | `VectorMemory` |
+
+## Observe context behavior with qita
+
+History and compaction are not meant to be invisible.
+
+In long-running agents, inspect your runs with `qita` and look for:
+
+- context-history warning events
+- summary or compaction events
+- whether later steps lose important constraints
+- whether your chosen memory adapter is preserving the right artifacts
+
+That is the research workflow QitOS is designed to support: tune context behavior, then inspect it as part of the run itself.

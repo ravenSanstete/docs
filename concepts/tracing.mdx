@@ -5,6 +5,19 @@ description: "QitOS automatically writes a structured trace for every run — a 
 
 Every time you run an agent, QitOS writes a self-contained trace directory. Tracing is on by default. It gives you a complete, structured record of what the agent did, step by step, including decisions, tool calls, state diffs, and stop conditions.
 
+## Why traceability is a first-class feature
+
+QitOS is designed for research and long-running agent work, so tracing is not an afterthought.
+
+The trace system exists so you can:
+
+- replay what the agent actually did instead of relying on anecdotes
+- compare runs across prompts, models, and tool configurations
+- debug parser failures, bad tool choices, and context collapse
+- export a run as an artifact for collaborators or audits
+
+This is why QitOS ships not just trace files, but also `qita` as a built-in traceability interface.
+
 ## What you get per run
 
 Each run produces a directory at `<trace_logdir>/<run_id>/` containing three files:
@@ -105,6 +118,16 @@ qita export --run ./runs/research_agent_20260407_143022_819441 --html run.html
 
 For a full walkthrough of the observability tooling, see **Guides > Observability**.
 
+## What qita adds on top of raw trace files
+
+The raw files are the source of truth. `qita` is the inspection layer on top of them.
+
+- `qita board` helps you compare many runs at once
+- `qita replay` helps you understand one run as a temporal process
+- `qita export` helps you share a run without requiring a local server
+
+In practice, this means QitOS gives you both machine-readable traces and a human-friendly review surface.
+
 ## Reproducibility requirements
 
 The trace system is designed for research reproducibility. A valid trace must include the following fields in `manifest.json`:
@@ -119,3 +142,9 @@ These are populated automatically from the `Task` object and the `TraceWriter` m
 <Tip>
   Pass `model_id` in the `TraceWriter` metadata so it appears in `manifest.json`. When using `agent.run()` with tracing enabled, QitOS reads `agent.llm.model` automatically.
 </Tip>
+
+## Related reading
+
+- [Observability](/guides/observability)
+- [CLI reference](/reference/cli)
+- [Tutorials](/tutorials)

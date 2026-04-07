@@ -6,8 +6,53 @@ description: "Reference for qitos.kit — reusable parsers, memory adapters, too
 `qitos.kit` provides concrete, reusable building blocks for common agent authoring patterns. All components attach to the `AgentModule + Engine` pipeline and do not introduce a second orchestrator.
 
 ```python
-from qitos.kit import ReActTextParser, WindowMemory, EditorToolSet, ...
+from qitos.kit import ReActTextParser, WindowMemory, CodingToolSet, ...
 ```
+
+## How to read this page
+
+Use this page as a capability map for QitOS authoring.
+
+| If you are deciding... | Start here |
+|---|---|
+| How the model should emit actions | Parsers |
+| How to keep useful context in long runs | Memory and history/compaction |
+| Which tools to expose | Tool sets |
+| Which ready-made registries to start from | Preset builders |
+| How to add planning or search structure | Planning |
+
+## Capability map
+
+### Parsers
+
+- `ReActTextParser` for `Thought:` / `Action:` protocols
+- `JsonDecisionParser` for JSON decision objects
+- `XmlDecisionParser` for XML protocols
+- `MiniMaxToolCallParser` when the model returns function-call-like structures
+- `TerminusJsonParser` and `TerminusXmlParser` for explicit termination-aware formats
+
+### Tool presets
+
+- `coding_tools(...)` for the canonical coding workspace
+- `advanced_coding_tools(...)` for a Claude-style coding preset
+- `web_tools()` for web research and extraction
+- `task_tools(...)` for persistent task-board workflows
+- `security_audit_tools(...)` for defensive repository review
+- `thinking_tools()` for explicit thought-recording flows
+- `notebook_tools(...)`, `report_tools(...)`, and `epub_tools(...)` for narrower scenarios
+
+### Long-running context blocks
+
+- `WindowHistory` for simple recency windows
+- `TokenBudgetSummaryHistory` for token-budget summarization
+- `CompactHistory` for multi-stage compaction with warning and summary events
+- `WindowMemory`, `SummaryMemory`, `VectorMemory`, and `MarkdownFileMemory` for cross-step recall
+
+### Planning and search
+
+- `NumberedPlanBuilder` for explicit plans
+- `PlanCursor` for plan execution bookkeeping
+- `DynamicTreeSearch` for branch selection and search-driven agents
 
 ---
 
@@ -168,6 +213,73 @@ Both share the same constructor signature as `JsonDecisionParser` and `XmlDecisi
 
 </Tab>
 
+<Tab title="History & Compaction">
+
+QitOS treats long-running context management as a first-class authoring concern.
+
+The key separation is:
+
+- **History** controls what goes back into the next model call
+- **Memory** stores useful records outside the immediate chat window
+
+### WindowHistory
+
+`WindowHistory` is the simplest history strategy. It keeps a fixed sliding message window.
+
+Use it when:
+
+- your runs are short
+- you want deterministic recency behavior
+- you do not want summaries or compaction
+
+### TokenBudgetSummaryHistory
+
+`TokenBudgetSummaryHistory` watches a token budget and summarizes older messages into one continuation message when needed.
+
+Use it when:
+
+- your runs are getting longer
+- you want a cheap "summary instead of overflow" behavior
+- you do not need the richer compaction controls of `CompactHistory`
+
+### CompactHistory
+
+`CompactHistory` is the most advanced built-in context compactor.
+
+It supports:
+
+- warning thresholds before overflow
+- round grouping with `MessageGrouper`
+- micro-compaction of large old messages
+- summary compaction for earlier rounds
+- runtime metadata and compaction events that can surface in traces
+
+Use it when:
+
+- you are building long-running agents
+- you want compaction to be inspectable
+- you want more control than a simple summary fallback
+
+### CompactConfig
+
+`CompactConfig` controls the compaction behavior, including:
+
+- `max_tokens`
+- `keep_last_rounds`
+- `keep_last_messages`
+- `warning_ratio`
+- `auto_compact`
+- micro-compaction preview sizes
+- summary length limits
+
+### MessageGrouper
+
+`MessageGrouper` groups messages into compactable rounds. It prefers grouping by step when possible, and falls back to assistant-boundary grouping otherwise.
+
+This matters because QitOS tries to compact context in ways that still preserve the structure of an agent trajectory.
+
+</Tab>
+
 <Tab title="Memory">
 
 Memory adapters implement `qitos.Memory` and give your agent persistent recall across steps.
@@ -298,44 +410,6 @@ Tool sets bundle related tools with shared lifecycle hooks (`setup` / `teardown`
 
 <AccordionGroup>
 
-<Accordion title="EditorToolSet">
-
-File editing tools for coding and document agents. All paths are resolved relative to `workspace_root` and sandboxed — paths that escape the workspace raise `PermissionError`.
-
-```python
-from qitos.kit import EditorToolSet
-```
-
-**Constructor**
-
-```python
-def __init__(self, workspace_root: str = ".")
-```
-
-**Tools provided**
-
-| Tool name | Description |
-|-----------|-------------|
-| `view` | View a file (with optional line range) or list a directory |
-| `create` | Create a new file, automatically creating parent directories |
-| `str_replace` | Replace one unique string fragment in a file; validates Python syntax |
-| `insert` | Insert text after a given line number |
-| `search` | Search for a keyword across a directory tree |
-| `list_tree` | Print a compact tree of the directory structure |
-| `replace_lines` | Replace an inclusive line range with new content |
-
-**Usage**
-
-```python
-from qitos import ToolRegistry
-from qitos.kit import EditorToolSet
-
-registry = ToolRegistry()
-registry.register_toolset(EditorToolSet(workspace_root="/path/to/project"))
-```
-
-</Accordion>
-
 <Accordion title="CodingToolSet">
 
 Full coding bundle combining editor, codebase search, file I/O, shell, and optionally notebook tools.
@@ -352,26 +426,42 @@ def __init__(
     workspace_root: str = ".",
     shell_timeout: int = 30,
     include_notebook: bool = True,
+    enable_lsp: bool = True,
+    enable_tasks: bool = True,
+    enable_web: bool = True,
+)
+```
+
+**Typical usage**
+
+```python
+from qitos import ToolRegistry
+from qitos.kit import CodingToolSet
+
+registry = ToolRegistry()
+registry.register_toolset(
+    CodingToolSet(
+        workspace_root="/path/to/project",
+        include_notebook=False,
+        enable_lsp=False,
+        enable_tasks=False,
+        enable_web=False,
+        expose_modern_names=False,
+    )
 )
 ```
 
 </Accordion>
 
-<Accordion title="CodebaseToolSet">
+<Accordion title="AdvancedCodingToolSet">
 
-Code search and navigation tools: glob, grep, read file range, append, and mkdir.
-
-```python
-from qitos.kit.tool import CodebaseToolSet
-```
-
-**Constructor**
+Higher-level coding preset intended for Claude-style or operator-style long-running coding agents.
 
 ```python
-def __init__(self, workspace_root: str = ".")
+from qitos.kit.toolset import advanced_coding_tools
 ```
 
-**Tools provided:** `glob_files`, `grep_files`, `read_file_range`, `append_file`, `make_directory`.
+Use this preset when you want a richer coding workflow surface than the base `coding_tools(...)` bundle.
 
 </Accordion>
 
@@ -395,6 +485,20 @@ def __init__(
 
 </Accordion>
 
+<Accordion title="ThinkingToolSet">
+
+Lightweight thought-recording tools for workflows that want explicit scratch thoughts as tool calls.
+
+```python
+from qitos.kit.toolset import thinking_tools
+
+registry = thinking_tools()
+```
+
+Use this as an opt-in research toolset rather than a default dependency for all agents.
+
+</Accordion>
+
 <Accordion title="ReportToolSet">
 
 Assessment and reporting tools for evaluation agents.
@@ -408,6 +512,34 @@ from qitos.kit import ReportToolSet
 ```python
 def __init__(self, workspace_root: str = ".")
 ```
+
+</Accordion>
+
+<Accordion title="SecurityAuditToolSet">
+
+Defensive repository-audit tools for entrypoint discovery, sink analysis, secret scanning, dependency checks, and finding synthesis.
+
+```python
+from qitos.kit import SecurityAuditToolSet
+```
+
+**Typical usage**
+
+```python
+from qitos import ToolRegistry
+from qitos.kit import SecurityAuditToolSet
+
+registry = ToolRegistry()
+registry.register_toolset(
+    SecurityAuditToolSet(
+        workspace_root="/path/to/repo",
+        include_external=False,
+        max_matches=80,
+    )
+)
+```
+
+Use this toolset when you want a defensive code-review or audit agent rather than a general editing agent.
 
 </Accordion>
 
@@ -429,25 +561,41 @@ def __init__(self, workspace_root: str = ".")
 
 </Accordion>
 
+<Accordion title="WebToolSet">
+
+Web-oriented preset built around HTTP and extraction tools.
+
+```python
+from qitos.kit.toolset import web_tools
+
+registry = web_tools()
+```
+
+Use it for lightweight web research and scraping flows when you do not need the full coding preset.
+
+</Accordion>
+
 </AccordionGroup>
 
 **Pre-built registry helpers**
 
-The `qitos.kit.tool.tools` module provides factory functions that return a configured `ToolRegistry`:
+The `qitos.kit.toolset` module provides factory functions that return a configured `ToolRegistry`:
 
 ```python
-from qitos.kit.tool.tools import (
-    editor_tools,
+from qitos.kit.toolset import (
+    advanced_coding_tools,
     codebase_tools,
     coding_tools,
-    web_tools,
-    notebook_tools,
-    task_tools,
-    report_tools,
+    editor_tools,
     math_tools,
+    notebook_tools,
+    report_tools,
+    task_tools,
+    web_tools,
 )
 
 registry = coding_tools(workspace_root="/path/to/project", shell_timeout=60)
+registry = advanced_coding_tools(workspace_root="/path/to/project")
 registry = web_tools()
 ```
 
@@ -458,29 +606,6 @@ registry = web_tools()
 Stand-alone tool objects you can register directly.
 
 <AccordionGroup>
-
-<Accordion title="RunCommand">
-
-Execute a shell command inside a working directory.
-
-```python
-from qitos.kit import RunCommand
-```
-
-**Constructor**
-
-```python
-def __init__(
-    self,
-    timeout: int = 30,
-    cwd: str = ".",
-    env: Optional[Dict[str, str]] = None,
-)
-```
-
-**`run(command, runtime_context=None)`** — Executes `command` in a shell subprocess. Returns `{"status", "command", "returncode", "stdout", "stderr", "cwd"}`.
-
-</Accordion>
 
 <Accordion title="HTTPGet / HTTPPost / HTTPRequest">
 
@@ -535,39 +660,15 @@ from qitos.kit import HTMLExtractText
 
 </Accordion>
 
-<Accordion title="WebFetch">
+<Accordion title="SubmitAnswer">
 
-Fetch a URL and optionally extract readable text in a single call.
-
-```python
-from qitos.kit.tool import WebFetch
-```
-
-**Constructor**
+Utility tool used by benchmark-style agents to submit a final candidate answer or flag.
 
 ```python
-def __init__(
-    self,
-    headers: Optional[Dict[str, str]] = None,
-    timeout: int = 30,
-    max_retries: int = 2,
-)
+from qitos.kit.tool import SubmitAnswer
 ```
 
-**`run(url, extract_text=True, keep_links=False, max_chars=20_000, timeout=None)`** — Returns `{"status", "url", "status_code", "title", "content", "content_length", "truncated", "raw_content_type"}`.
-
-</Accordion>
-
-<Accordion title="ReadFile / WriteFile / ListFiles">
-
-Basic file I/O tools.
-
-```python
-from qitos.kit import ReadFile, WriteFile
-from qitos.kit.tool import ListFiles
-```
-
-All three accept `root_dir: str = "."` in their constructors, which anchors path resolution.
+This is especially useful in CyBench-like settings where the agent must explicitly hand over a candidate result through a tool call rather than only return a final natural-language answer.
 
 </Accordion>
 

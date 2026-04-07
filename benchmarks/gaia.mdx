@@ -137,9 +137,14 @@ The evaluation script builds an `OpenDeepResearchGaiaAgent` with the following t
 
 ```python
 from qitos.kit.tool import (
-    WebSearch, VisitURL, PageUp, PageDown,
-    FindInPage, FindNext, ArchiveSearch,
-    ReadFile, ListFiles, WriteFile, RunCommand,
+    ArchiveSearch,
+    CodingToolSet,
+    FindInPage,
+    FindNext,
+    PageDown,
+    PageUp,
+    VisitURL,
+    WebSearch,
 )
 
 registry.register(WebSearch())
@@ -148,8 +153,16 @@ registry.register(PageDown())
 registry.register(FindInPage())
 registry.register(FindNext())
 registry.register(ArchiveSearch())
-registry.register(ReadFile(root_dir=workspace_root))
-registry.register(RunCommand(cwd=workspace_root))
+registry.include(
+    CodingToolSet(
+        workspace_root=workspace_root,
+        include_notebook=False,
+        enable_lsp=False,
+        enable_tasks=False,
+        enable_web=False,
+        expose_modern_names=False,
+    )
+)
 ```
 
 The agent uses a `ReActTextParser` expecting `Thought:` / `Action:` output format. You can swap in any `AgentModule` subclass and pass it to `Engine.run(task)` — the adapter produces standard `Task` objects.
