@@ -1,0 +1,68 @@
+---
+title: "Introduction"
+description: "QitOS is a research-first agent framework for building reproducible LLM agents with a clean AgentModule + Engine kernel."
+---
+
+QitOS gives you a stable `AgentModule + Engine` kernel for building reproducible LLM agents. Whether you're prototyping ReAct loops, running GAIA benchmarks, or shipping a production coding agent, QitOS keeps your runs traceable, your patterns composable, and your results reproducible.
+
+## Who QitOS is for
+
+QitOS is built for three kinds of practitioners:
+
+- **Researchers** — prototype ReAct, PlanAct, Tree-of-Thought, Reflexion, and new agent methods with reproducible runs you can diff, replay, and publish.
+- **Agent builders** — build tool-using agents on a stable execution loop instead of piling framework glue code on top of raw LLM calls.
+- **Evaluators** — run GAIA, Tau-Bench, and CyBench-style workflows on the same kernel you use in product agents, so benchmark results actually transfer.
+
+## Key capabilities
+
+### Reproducible runs
+
+Every QitOS run writes a `manifest.json`, `events.jsonl`, and `steps.jsonl` to a local run directory. The manifest captures the model ID, prompt hash, config hash, seed, and tool manifest — everything you need to reproduce or compare runs exactly.
+
+### Built-in observability with qita
+
+`qita` is QitOS's built-in trace viewer. After any run, launch the board to inspect step-by-step execution, replay the trajectory, and export traces to standalone HTML.
+
+```bash
+qita board --logdir runs
+```
+
+The board runs at `http://127.0.0.1:8765` and auto-refreshes as new runs appear.
+
+### Canonical agent patterns
+
+QitOS ships with canonical implementations of four established reasoning patterns, each runnable from `examples/patterns/`:
+
+| Pattern | Description |
+|---|---|
+| **ReAct** | Text protocol with one action per step |
+| **PlanAct** | Explicit plan first, then step-by-step execution |
+| **Tree-of-Thought** | Branch and score before acting |
+| **Reflexion** | Actor-critic loop with grounded retry behavior |
+
+### Benchmark adapters
+
+QitOS includes adapters for GAIA, Tau-Bench, and CyBench that run on the same `AgentModule + Engine` kernel you use for your own agents. You don't need a separate evaluation harness.
+
+## Status
+
+<Warning>
+QitOS is currently **Alpha**. The stable foundation is the `AgentModule + Engine` kernel, the `qita` trace/observability flow, canonical examples, and benchmark adapters. Higher-level convenience APIs, some `kit` modules, and experimental toolsets are likely to evolve. If you are evaluating adoption, start from the kernel and examples rather than assuming frozen surface area.
+</Warning>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Run your first agent in under 2 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install QitOS and its optional extras
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/agent-module">
+    Understand AgentModule, Engine, State, and Tools
+  </Card>
+  <Card title="Agent patterns" icon="diagram-project" href="/guides/agent-patterns">
+    ReAct, PlanAct, Tree-of-Thought, and Reflexion examples
+  </Card>
+</CardGroup>

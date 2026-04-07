@@ -1,0 +1,494 @@
+---
+title: "Agent Patterns"
+description: "ReAct, PlanAct, Tree-of-Thought, and Reflexion patterns with working code examples."
+---
+
+QitOS ships with four canonical agent patterns. Each pattern is a different way to override `decide()` and manage state — all of them run through the same Engine kernel. Pick the one that matches your task structure.
+
+| Pattern | Best for | Key mechanism |
+|---|---|---|
+| **ReAct** | Open-ended tool use, coding, search | Thought → Action → Observation loop |
+| **PlanAct** | Multi-step tasks with a known structure | Explicit plan list, cursor advances on success |
+| **Tree-of-Thought** | Exploration, research, question answering | `Decision.branch()` over scored candidates |
+| **Reflexion** | Tasks requiring grounded self-critique | Actor drafts, critic evaluates, loop until grounded |
+
+<Tabs>
+
+<Tab title="ReAct">
+
+## ReAct
+
+ReAct interleaves reasoning (`Thought`) with tool calls (`Action`) and observes their results (`Observation`). The scratchpad accumulates the trajectory.
+
+**When to use it:**
+- You need an LLM to choose which tool to call at each step
+- The task is open-ended and you cannot enumerate steps upfront
+- You want the simplest possible setup
+
+**How it works:**
+
+The system prompt (`REACT_SYSTEM_PROMPT`) instructs the model to emit a `Thought:` line followed by an `Action:` line. `ReActTextParser` parses this text output into a `Decision[Action]`. The `reduce` method appends each triplet to the scratchpad.
+
+```python
+"""Pattern: ReAct with the default Engine LLM path."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from qitos import Action, AgentModule, Decision, StateSchema, ToolRegistry
+from qitos.kit import EditorToolSet, REACT_SYSTEM_PROMPT, ReActTextParser, RunCommand, format_action, render_prompt
+from qitos.models import OpenAICompatibleModel
+
+TASK = "Open buggy_module.py, fix add(a, b) so it returns a + b, then run verification."
+WORKSPACE = Path("./playground/react_pattern")
+MODEL_NAME = os.getenv("QITOS_MODEL", "Qwen/Qwen3-8B")
+MODEL_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1/")
+MAX_STEPS = 8
+
+
+@dataclass
+class ReactState(StateSchema):
+    scratchpad: list[str] = field(default_factory=list)
+    target_file: str = "buggy_module.py"
+    test_command: str = 'python -c "import buggy_module; assert buggy_module.add(20, 22) == 42"'
+
+
+class ReactAgent(AgentModule[ReactState, dict[str, Any], Action]):
+    def __init__(self, llm: Any, workspace_root: str):
+        registry = ToolRegistry()
+        registry.include(EditorToolSet(workspace_root=workspace_root))
+        registry.register(RunCommand(cwd=workspace_root))
+        super().__init__(tool_registry=registry, llm=llm, model_parser=ReActTextParser())
+
+    def init_state(self, task: str, **kwargs: Any) -> ReactState:
+        return ReactState(task=task, max_steps=int(kwargs.get("max_steps", MAX_STEPS)))
+
+    def build_system_prompt(self, state: ReactState) -> str | None:
+        return render_prompt(REACT_SYSTEM_PROMPT, {"tool_schema": self.tool_registry.get_tool_descriptions()})
+
+    def prepare(self, state: ReactState) -> str:
+        lines = [
+            f"Task: {state.task}",
+            f"Target file: {state.target_file}",
+            f"Verification command: {state.test_command}",
+            f"Step: {state.current_step}/{state.max_steps}",
+        ]
+        if state.scratchpad:
+            lines.append("Recent trajectory:")
+            lines.extend(state.scratchpad[-8:])
+        return "\n".join(lines)
+
+    def reduce(self, state: ReactState, observation: dict[str, Any], decision: Decision[Action]) -> ReactState:
+        action_results = observation.get("action_results", []) if isinstance(observation, dict) else []
+        if decision.rationale:
+            state.scratchpad.append(f"Thought: {decision.rationale}")
+        if decision.actions:
+            state.scratchpad.append(f"Action: {format_action(decision.actions[0])}")
+        if action_results:
+            first = action_results[0]
+            state.scratchpad.append(f"Observation: {first}")
+            if isinstance(first, dict) and int(first.get("returncode", 1)) == 0:
+                state.final_result = "Patch applied and verification passed."
+        state.scratchpad = state.scratchpad[-30:]
+        return state
+```
+
+**The prompt-parser contract:**
+
+`REACT_SYSTEM_PROMPT` tells the model to output:
+```
+Thought: <reasoning>
+Action: <tool_name>(<args>)
+```
+
+`ReActTextParser` expects exactly this format. If you change the prompt format you must change the parser. Using an XML prompt with `ReActTextParser` will produce parse errors every step.
+
+</Tab>
+
+<Tab title="PlanAct">
+
+## PlanAct
+
+PlanAct splits execution into two phases: first build an explicit numbered plan, then execute each plan step in order. The `cursor` advances when a step succeeds.
+
+**When to use it:**
+- The task has a predictable structure you can plan before acting
+- You want the model to commit to a sequence and track progress explicitly
+- You need to present a plan to users before execution begins
+
+**How it works:**
+
+`decide()` intercepts step 0 (or any time `plan_steps` is empty) and calls `_plan()`, which asks the LLM to produce a numbered list via `NumberedPlanBuilder`. After the plan is ready, `decide()` returns `None` so the Engine's default model path runs for each subsequent step. The `cursor` advances in `reduce()` when a tool call succeeds.
+
+```python
+"""Pattern: Plan-Act with an explicit plan builder and the default Engine model path."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from qitos import Action, AgentModule, Decision, StateSchema, ToolRegistry
+from qitos.kit import (
+    EditorToolSet,
+    NumberedPlanBuilder,
+    PLAN_DRAFT_PROMPT,
+    PLAN_EXEC_SYSTEM_PROMPT,
+    ReActTextParser,
+    RunCommand,
+    format_action,
+    render_prompt,
+)
+from qitos.models import OpenAICompatibleModel
+
+TASK = "Fix buggy_module.py and verify the fix with the provided command."
+WORKSPACE = Path("./playground/planact_pattern")
+MAX_STEPS = 10
+TEST_COMMAND = 'python -c "import buggy_module; assert buggy_module.add(20, 22) == 42"'
+
+
+@dataclass
+class PlanActState(StateSchema):
+    plan_steps: list[str] = field(default_factory=list)
+    cursor: int = 0
+    target_file: str = "buggy_module.py"
+    test_command: str = TEST_COMMAND
+    scratchpad: list[str] = field(default_factory=list)
+
+
+class PlanActAgent(AgentModule[PlanActState, dict[str, Any], Action]):
+    def __init__(self, llm: Any, workspace_root: str):
+        registry = ToolRegistry()
+        registry.include(EditorToolSet(workspace_root=workspace_root))
+        registry.register(RunCommand(cwd=workspace_root))
+        super().__init__(tool_registry=registry, llm=llm, model_parser=ReActTextParser())
+        self.plan_builder = NumberedPlanBuilder()
+
+    def init_state(self, task: str, **kwargs: Any) -> PlanActState:
+        return PlanActState(task=task, max_steps=int(kwargs.get("max_steps", MAX_STEPS)))
+
+    def decide(self, state: PlanActState, observation: dict[str, Any]):
+        if not state.plan_steps or state.cursor >= len(state.plan_steps):
+            if not self._plan(state):
+                return Decision.final("Failed to build a valid plan.")
+            return Decision.wait("plan_ready")
+        return None  # hand off to Engine's model path
+
+    def reduce(self, state: PlanActState, observation: dict[str, Any], decision: Decision[Action]) -> PlanActState:
+        action_results = observation.get("action_results", []) if isinstance(observation, dict) else []
+        if decision.rationale:
+            state.scratchpad.append(f"Thought: {decision.rationale}")
+        if decision.actions:
+            state.scratchpad.append(f"Action: {format_action(decision.actions[0])}")
+        if action_results:
+            first = action_results[0]
+            state.scratchpad.append(f"Observation: {first}")
+            if isinstance(first, dict) and first.get("status") == "success":
+                state.cursor += 1
+            if isinstance(first, dict) and int(first.get("returncode", 1)) == 0:
+                state.final_result = "Verification passed."
+                state.cursor = len(state.plan_steps)
+        state.scratchpad = state.scratchpad[-40:]
+        return state
+
+    def _plan(self, state: PlanActState) -> bool:
+        prompt = render_prompt(
+            PLAN_DRAFT_PROMPT,
+            {
+                "task": (
+                    f"{state.task}\n"
+                    f"Target file: {state.target_file}\n"
+                    f"Last step must run: {state.test_command}"
+                ),
+            },
+        )
+        plan = self.plan_builder.build(self.llm, prompt)
+        if not plan:
+            return False
+        state.plan_steps = plan
+        state.cursor = 0
+        state.scratchpad.append("Plan: " + " | ".join(plan))
+        return True
+```
+
+<Note>
+When `decide()` returns `None`, the Engine calls the LLM using `prepare()` output + system prompt + model parser. This is the default model path — you don't need to call the LLM yourself for the execution steps.
+</Note>
+
+</Tab>
+
+<Tab title="Tree-of-Thought">
+
+## Tree-of-Thought
+
+Tree-of-Thought generates multiple scored candidate branches at each step and selects the most promising one to explore. It uses `Decision.branch()` to express the branching structure.
+
+**When to use it:**
+- Multiple plausible next actions exist and you want the agent to score them
+- The task involves exploration over a document or search space
+- You want to prevent committing to a bad path too early
+
+**How it works:**
+
+`decide()` calls the LLM directly to produce a JSON object with a `thoughts` list. Each thought has an `idea`, a `score`, and the `action` to take. These become `Decision.act()` candidates inside a `Decision.branch()`. The Engine's `BranchSelector` picks the highest-scoring branch. Evidence accumulates in `state.evidence`.
+
+```python
+"""Pattern: Tree-of-Thought with branch search over EPUB evidence."""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from qitos import Action, AgentModule, Decision, StateSchema, ToolRegistry
+from qitos.kit import DynamicTreeSearch, EpubToolSet, format_action
+from qitos.models import OpenAICompatibleModel
+
+TASK = "Read the EPUB and answer the question with concise supporting evidence."
+WORKSPACE = Path("./playground/tot_pattern")
+EPUB_PATH = WORKSPACE / "book.epub"
+QUESTION = "What is the main argument of chapter 1?"
+MAX_STEPS = 12
+
+THOUGHT_PROMPT = """Question: {question}
+EPUB path: {epub_path}
+Evidence:
+{evidence}
+
+Return JSON:
+{{
+  "thoughts": [{{"idea": "...", "score": 0.0, "action": {{"name": "epub.list_chapters|epub.search|epub.read_chapter", "args": {{...}}}}}}],
+  "can_answer": true_or_false,
+  "answer": "optional"
+}}
+"""
+
+
+@dataclass
+class ToTState(StateSchema):
+    epub_path: str = "book.epub"
+    question: str = ""
+    evidence: list[str] = field(default_factory=list)
+    scratchpad: list[str] = field(default_factory=list)
+
+
+class ToTAgent(AgentModule[ToTState, dict[str, Any], Action]):
+    def __init__(self, llm: Any, workspace_root: str):
+        registry = ToolRegistry()
+        registry.register_toolset(EpubToolSet(workspace_root=workspace_root), namespace="epub")
+        super().__init__(tool_registry=registry, llm=llm)
+
+    def init_state(self, task: str, **kwargs: Any) -> ToTState:
+        return ToTState(
+            task=task,
+            max_steps=int(kwargs.get("max_steps", MAX_STEPS)),
+            epub_path=str(kwargs.get("epub_path", EPUB_PATH.name)),
+            question=str(kwargs.get("question", QUESTION)),
+        )
+
+    def decide(self, state: ToTState, observation: dict[str, Any]):
+        if state.current_step == 0:
+            return Decision.act(
+                [Action(name="epub.list_chapters", args={"path": state.epub_path})],
+                rationale="bootstrap_catalog",
+            )
+
+        raw = self.llm(
+            [
+                {"role": "system", "content": "Return valid JSON only."},
+                {"role": "user", "content": THOUGHT_PROMPT.format(
+                    question=state.question,
+                    epub_path=state.epub_path,
+                    evidence=self._evidence_block(state),
+                )},
+            ]
+        )
+        parsed = self._parse_json(str(raw))
+        if not parsed:
+            return Decision.act(
+                [Action(name="epub.search", args={"path": state.epub_path, "query": state.question, "top_k": 3})],
+                rationale="fallback_search",
+            )
+
+        if bool(parsed.get("can_answer")) and str(parsed.get("answer", "")).strip() and len(state.evidence) >= 2:
+            return Decision.final(answer=str(parsed["answer"]))
+
+        candidates = []
+        for item in parsed.get("thoughts", []):
+            if not isinstance(item, dict):
+                continue
+            action = item.get("action") or {}
+            name = str(action.get("name", "")).strip()
+            args = action.get("args") or {}
+            if not name or not isinstance(args, dict):
+                continue
+            args.setdefault("path", state.epub_path)
+            score = float(item.get("score", 0.5))
+            candidates.append(
+                Decision.act(
+                    [Action(name=name, args=args)],
+                    rationale=str(item.get("idea", "candidate")),
+                    meta={"score": score},
+                )
+            )
+
+        if not candidates:
+            return Decision.act(
+                [Action(name="epub.search", args={"path": state.epub_path, "query": state.question, "top_k": 3})],
+                rationale="fallback_search",
+            )
+        return Decision.branch(candidates=candidates, rationale="tot_branch")
+```
+
+Pass `search=DynamicTreeSearch(top_k=2)` to `agent.run()` to control how many branches the selector evaluates:
+
+```python
+result = agent.run(
+    task=TASK,
+    workspace=str(WORKSPACE),
+    epub_path=EPUB_PATH.name,
+    question=QUESTION,
+    max_steps=MAX_STEPS,
+    search=DynamicTreeSearch(top_k=2),
+    return_state=True,
+)
+```
+
+</Tab>
+
+<Tab title="Reflexion">
+
+## Reflexion
+
+Reflexion implements an actor-critic loop: the agent fetches source material, drafts an answer, then critiques it against the source. It loops until the critique says the answer is grounded or `max_reflections` is reached.
+
+**When to use it:**
+- Accuracy and grounding matter more than speed
+- The task requires comparing claims against a source (summarization, QA, fact-checking)
+- You want the agent to self-identify what is missing or superfluous
+
+**How it works:**
+
+`decide()` drives a three-phase flow entirely without a model parser: fetch HTML → extract text → call `_reflect()`. The `_reflect()` method calls the LLM with a structured JSON prompt that requires both an answer and a structured critique. If `critique.needs_revision` is `True` and the reflection budget allows, `decide()` returns `Decision.wait()` to loop again.
+
+```python
+"""Pattern: Reflexion with grounded self-critique over retrieved evidence."""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from qitos import Action, AgentModule, Decision, StateSchema, ToolRegistry
+from qitos.kit import HTMLExtractText, HTTPGet
+from qitos.models import OpenAICompatibleModel
+
+TASK = "Summarize the article and revise the answer until the critique says it is grounded."
+TARGET_URL = "https://www.thepaper.cn/newsDetail_forward_32639776"
+MAX_STEPS = 12
+MAX_REFLECTIONS = 2
+
+REFLEXION_PROMPT = """You are a reflexion actor-critic.
+
+Task: {task}
+Source URL: {target_url}
+Source text:
+{text}
+
+Current draft answer:
+{draft}
+
+Previous reflections:
+{reflections}
+
+Return valid JSON only:
+{{
+  "answer": "revised answer",
+  "citations": [{{"source": "source_text", "quote": "exact supporting quote"}}],
+  "critique": {{
+    "missing": ["missing aspect 1", "..."],
+    "superfluous": ["unnecessary claim 1", "..."],
+    "grounding": ["claim X is/ is not grounded because ..."],
+    "needs_revision": true_or_false
+  }}
+}}
+"""
+
+
+@dataclass
+class ReflexionState(StateSchema):
+    target_url: str = TARGET_URL
+    page_html: str = ""
+    page_text: str = ""
+    draft_answer: str = ""
+    reflections: list[dict[str, Any]] = field(default_factory=list)
+    max_reflections: int = MAX_REFLECTIONS
+
+
+class ReflexionAgent(AgentModule[ReflexionState, dict[str, Any], Action]):
+    def __init__(self, llm: Any):
+        registry = ToolRegistry()
+        registry.register(HTTPGet())
+        registry.register(HTMLExtractText())
+        super().__init__(tool_registry=registry, llm=llm)
+
+    def decide(self, state: ReflexionState, observation: dict[str, Any]):
+        if not state.page_html:
+            return Decision.act(
+                [Action(name="http_get", args={"url": state.target_url})],
+                rationale="fetch_source",
+            )
+        if not state.page_text:
+            return Decision.act(
+                [Action(name="extract_web_text", args={"html": state.page_html, "max_chars": 12000})],
+                rationale="extract_source_text",
+            )
+
+        payload = self._reflect(state)
+        if payload is None:
+            return Decision.final("Failed to produce valid reflexion JSON output.")
+
+        critique = payload.get("critique") if isinstance(payload.get("critique"), dict) else {}
+        needs_revision = bool(critique.get("needs_revision", False))
+        answer = str(payload.get("answer", "")).strip()
+
+        state.draft_answer = answer
+        state.reflections.append(payload)
+
+        if needs_revision and len(state.reflections) <= state.max_reflections:
+            return Decision.wait(rationale="reflexion_revision_cycle")
+
+        citations = payload.get("citations") if isinstance(payload.get("citations"), list) else []
+        return Decision.final(answer=f"{answer}\n\nCitations: {citations}")
+```
+
+<Note>
+`ReflexionAgent` calls `self.llm()` directly inside `decide()` — there is no `model_parser`. This is valid; the Engine's model path is only used when `decide()` returns `None`. When you drive decisions yourself, you own the LLM call.
+</Note>
+
+</Tab>
+
+</Tabs>
+
+## Comparison
+
+| | ReAct | PlanAct | Tree-of-Thought | Reflexion |
+|---|---|---|---|---|
+| LLM calls per step | 1 (via Engine) | 1 plan + 1/step | 1 (manual) | 1 (manual) |
+| Decision source | `model_parser` output | `decide()` guards + Engine | Custom `decide()` | Custom `decide()` |
+| State growth | Scratchpad list | Plan list + cursor | Evidence list | Reflections list |
+| Stops on | `final_result` set | `final_result` set | `Decision.final()` | `Decision.final()` |
+| Best step budget | 5–15 | 8–20 | 8–15 | 4–12 |
+| Needs `model_parser` | Yes — `ReActTextParser` | Yes — `ReActTextParser` | No | No |
