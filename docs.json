@@ -40,7 +40,10 @@
                   "tutorials/react",
                   "tutorials/planact",
                   "tutorials/claude-code",
-                  "tutorials/code-security-audit"
+                  "tutorials/code-security-audit",
+                  "tutorials/switch-model-families",
+                  "tutorials/reproducible-benchmark-runs",
+                  "tutorials/replay-and-inspect-failed-runs"
                 ]
               }
             ]
@@ -56,14 +59,21 @@
                   "concepts/engine",
                   "concepts/state-and-task",
                   "concepts/tools-and-registry",
-                  "concepts/tracing"
+                  "concepts/family-presets",
+                  "concepts/tracing",
+                  "concepts/official-runs",
+                  "concepts/glossary"
                 ]
               },
               {
                 "group": "Guides",
-                "pages": [
-                  "guides/build-your-first-agent",
-                  "guides/agent-patterns",
+              "pages": [
+                "guides/build-your-first-agent",
+                "guides/computer-use-desktop",
+                "guides/multimodal-core",
+                "guides/agent-patterns",
+                  "guides/add-a-family-preset",
+                  "guides/qwen-family-best-practice",
                   "guides/memory-and-history",
                   "guides/critics-and-stop-criteria",
                   "guides/observability"
@@ -83,6 +93,7 @@
                 "pages": [
                   "reference/api",
                   "reference/kit",
+                  "reference/model-family-matrix",
                   "reference/cli",
                   "reference/configuration"
                 ]
@@ -98,7 +109,9 @@
                 "root": "blog/index",
                 "pages": [
                   "blog/index",
-                  "blog/single-kernel"
+                  "blog/single-kernel",
+                  "blog/reproducible-runs",
+                  "blog/gold-presets-preview"
                 ]
               }
             ]
@@ -129,7 +142,10 @@
                   "zh/tutorials/react",
                   "zh/tutorials/planact",
                   "zh/tutorials/claude-code",
-                  "zh/tutorials/code-security-audit"
+                  "zh/tutorials/code-security-audit",
+                  "zh/tutorials/switch-model-families",
+                  "zh/tutorials/reproducible-benchmark-runs",
+                  "zh/tutorials/replay-and-inspect-failed-runs"
                 ]
               }
             ]
@@ -145,7 +161,10 @@
                   "zh/concepts/engine",
                   "zh/concepts/state-and-task",
                   "zh/concepts/tools-and-registry",
-                  "zh/concepts/tracing"
+                  "zh/concepts/family-presets",
+                  "zh/concepts/tracing",
+                  "zh/concepts/official-runs",
+                  "zh/concepts/glossary"
                 ]
               },
               {
@@ -153,6 +172,8 @@
                 "pages": [
                   "zh/guides/build-your-first-agent",
                   "zh/guides/agent-patterns",
+                  "zh/guides/add-a-family-preset",
+                  "zh/guides/qwen-family-best-practice",
                   "zh/guides/memory-and-history",
                   "zh/guides/critics-and-stop-criteria",
                   "zh/guides/observability"
@@ -172,6 +193,7 @@
                 "pages": [
                   "zh/reference/api",
                   "zh/reference/kit",
+                  "zh/reference/model-family-matrix",
                   "zh/reference/cli",
                   "zh/reference/configuration"
                 ]
@@ -187,7 +209,9 @@
                 "root": "zh/blog/index",
                 "pages": [
                   "zh/blog/index",
-                  "zh/blog/single-kernel"
+                  "zh/blog/single-kernel",
+                  "zh/blog/reproducible-runs",
+                  "zh/blog/gold-presets-preview"
                 ]
               }
             ]

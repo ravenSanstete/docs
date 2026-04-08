@@ -9,7 +9,7 @@ QitOS is currently **Alpha**. The core `AgentModule + Engine` kernel, tracing, a
 
 ## Requirements
 
-QitOS requires **Python 3.9 or later**. It is tested on Python 3.9, 3.10, 3.11, and 3.12.
+QitOS requires **Python 3.10 or later**. It is tested on Python 3.10, 3.11, and 3.12.
 
 <Note>
 Need a remote model API before running LLM-powered examples? Start with [Prerequisites](/prerequisites) for provider suggestions, API key setup, and compatibility checks.
@@ -24,6 +24,10 @@ pip install qitos
 ```
 
 The core install includes the `AgentModule + Engine` kernel, the `qita` observability tools, and the `kit` toolkit modules. It does not include the OpenAI client or benchmark dataset loaders.
+
+<Tip>
+If you want to run the minimal coding-agent quickstart immediately, skip straight to `pip install "qitos[models]"`.
+</Tip>
 
 ## Optional extras
 
@@ -52,7 +56,7 @@ pip install "qitos[all]"
 | `all` | All of the above |
 
 <Tip>
-If you're just getting started, `pip install "qitos[models]"` is the right choice. It gives you everything you need to run the quickstart examples.
+If you're just getting started, `pip install "qitos[models]"` is the right choice. It gives you everything you need to run the minimal coding-agent quickstart.
 </Tip>
 
 ## Source install
@@ -81,9 +85,11 @@ You should see output like:
 0.3.0
 ```
 
-You can also verify the `qita` CLI is on your path:
+You can also verify the minimal coding agent and both CLIs are on your path:
 
 ```bash
+qit demo minimal
+qit --help
 qita --help
 ```
 
